@@ -50,7 +50,7 @@ fun generateSignature(descriptor: DeclarationDescriptor): String? {
             parent + separator + escape(descriptor.name.asString()) + "|" + encodeSignature(descriptor)
         }
         is PackageFragmentDescriptor -> {
-            if (descriptor.fqName.isRoot) "" else escape(descriptor.fqName.pathSegments().map { escape(it.identifier) }.joinToString("."))
+            if (descriptor.fqName.isRoot) "" else escape(descriptor.fqName.pathSegments().joinToString(".") { escape(it.identifier) })
         }
         is ClassDescriptor -> {
             val parent = generateSignature(descriptor.containingDeclaration) ?: return null
