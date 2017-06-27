@@ -8651,6 +8651,12 @@ public class IntentionTestGenerated extends AbstractIntentionTest {
             doTest(fileName);
         }
 
+        @TestMetadata("ImportSameDeclarationsFromOtherPackage.kt")
+        public void testImportSameDeclarationsFromOtherPackage() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/intentions/importMember/ImportSameDeclarationsFromOtherPackage.kt");
+            doTest(fileName);
+        }
+
         @TestMetadata("NestedClass1.kt")
         public void testNestedClass1() throws Exception {
             String fileName = KotlinTestUtils.navigationMetadata("idea/testData/intentions/importMember/NestedClass1.kt");

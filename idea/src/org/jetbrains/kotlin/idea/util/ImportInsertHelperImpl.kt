@@ -131,28 +131,31 @@ class ImportInsertHelperImpl(private val project: Project) : ImportInsertHelper(
                 is PackageViewDescriptor -> topLevelScope.findPackage(name)
                 else -> null
             }
-            if (conflict != null
-                && imports.any { !it.isAllUnder && it.importPath?.fqName == conflict.importableFqName && it.importPath?.importedName == name }
-            ) {
-                return ImportDescriptorResult.FAIL
+            if (conflict != null) {
+                val hasExplicitImportAlready = imports.any {
+                    !it.isAllUnder && it.importPath?.fqName == conflict.importableFqName && it.importPath?.importedName == name
+                }
+                if (hasExplicitImportAlready) {
+                    return ImportDescriptorResult.FAIL
+                }
             }
 
-            val fqName = target.importableFqName!!
-            val containerFqName = fqName.parent()
-
-            val tryStarImport = shouldTryStarImport(containerFqName, target, imports)
-                                    && when (target) {
-                                        // this check does not give a guarantee that import with * will import the class - for example,
-                                        // there can be classes with conflicting name in more than one import with *
-                                        is ClassifierDescriptorWithTypeParameters -> topLevelScope.findClassifier(name, NoLookupLocation.FROM_IDE) == null
-                                        is FunctionDescriptor, is PropertyDescriptor -> true
-                                        else -> error("Unknown kind of descriptor to import:$target")
-                                    }
-
-            if (tryStarImport) {
-                val result = addStarImport(target)
-                if (result != ImportDescriptorResult.FAIL) return result
-            }
+//            val fqName = target.importableFqName!!
+//            val containerFqName = fqName.parent()
+//
+//            val tryStarImport = shouldTryStarImport(containerFqName, target, imports)
+//                                    && when (target) {
+//                                        // this check does not give a guarantee that import with * will import the class - for example,
+//                                        // there can be classes with conflicting name in more than one import with *
+//                                        is ClassifierDescriptorWithTypeParameters -> topLevelScope.findClassifier(name, NoLookupLocation.FROM_IDE) == null
+//                                        is FunctionDescriptor, is PropertyDescriptor -> true
+//                                        else -> error("Unknown kind of descriptor to import:$target")
+//                                    }
+//
+//            if (tryStarImport) {
+//                val result = addStarImport(target)
+//                if (result != ImportDescriptorResult.FAIL) return result
+//            }
 
             return addExplicitImport(target)
         }
