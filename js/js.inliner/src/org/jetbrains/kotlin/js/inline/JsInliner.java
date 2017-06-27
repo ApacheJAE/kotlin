@@ -38,6 +38,7 @@ import org.jetbrains.kotlin.js.inline.context.InliningContext;
 import org.jetbrains.kotlin.js.inline.context.NamingContext;
 import org.jetbrains.kotlin.js.inline.util.CollectUtilsKt;
 import org.jetbrains.kotlin.js.inline.util.CollectionUtilsKt;
+import org.jetbrains.kotlin.js.inline.util.NamedFunction;
 import org.jetbrains.kotlin.js.inline.util.NamingUtilsKt;
 import org.jetbrains.kotlin.resolve.inline.InlineStrategy;
 
@@ -49,8 +50,8 @@ import static org.jetbrains.kotlin.js.translate.utils.JsAstUtils.flattenStatemen
 public class JsInliner extends JsVisitorWithContextImpl {
 
     private final JsConfig config;
-    private final Map<JsName, JsFunction> functions;
-    private final Map<String, JsFunction> accessors;
+    private final Map<JsName, NamedFunction> functions;
+    private final Map<String, NamedFunction> accessors;
     private final Stack<JsInliningContext> inliningContexts = new Stack<>();
     private final Set<JsFunction> processedFunctions = CollectionUtilsKt.IdentitySet();
     private final Set<JsFunction> inProcessFunctions = CollectionUtilsKt.IdentitySet();
@@ -72,8 +73,8 @@ public class JsInliner extends JsVisitorWithContextImpl {
             @NotNull List<JsProgramFragment> fragments,
             @NotNull List<JsProgramFragment> fragmentsToProcess
     ) {
-        Map<JsName, JsFunction> functions = CollectUtilsKt.collectNamedFunctions(fragments);
-        Map<String, JsFunction> accessors = CollectUtilsKt.collectAccessors(fragments);
+        Map<JsName, NamedFunction> functions = CollectUtilsKt.collectNamedFunctionsAndMetadata(fragments);
+        Map<String, NamedFunction> accessors = CollectUtilsKt.collectAccessors(fragments);
         DummyAccessorInvocationTransformer accessorInvocationTransformer = new DummyAccessorInvocationTransformer();
         for (JsProgramFragment fragment : fragmentsToProcess) {
             accessorInvocationTransformer.accept(fragment.getDeclarationBlock());
@@ -95,13 +96,17 @@ public class JsInliner extends JsVisitorWithContextImpl {
             nodesToPostProcess.add(block);
         }
 
-        RemoveUnusedFunctionDefinitionsKt.removeUnusedFunctionDefinitions(nodesToPostProcess, functions);
+        Map<JsName, JsFunction> jsFunctions = new HashMap<>();
+        for (Map.Entry<JsName, NamedFunction> entry : functions.entrySet()) {
+            jsFunctions.put(entry.getKey(), entry.getValue().getFunction());
+        }
+        RemoveUnusedFunctionDefinitionsKt.removeUnusedFunctionDefinitions(nodesToPostProcess, jsFunctions);
     }
 
     private JsInliner(
             @NotNull JsConfig config,
-            @NotNull Map<JsName, JsFunction> functions,
-            @NotNull Map<String, JsFunction> accessors,
+            @NotNull Map<JsName, NamedFunction> functions,
+            @NotNull Map<String, NamedFunction> accessors,
             @NotNull FunctionReader functionReader,
             @NotNull DiagnosticSink trace
     ) {
@@ -130,7 +135,7 @@ public class JsInliner extends JsVisitorWithContextImpl {
         assert !inProcessFunctions.contains(function): "Inliner has revisited function";
         inProcessFunctions.add(function);
 
-        if (functions.containsValue(function)) {
+        if (functions.values().stream().anyMatch(namedFunction -> namedFunction.getFunction().equals(function))) {
             namedFunctionsStack.push(function);
         }
 
@@ -167,7 +172,7 @@ public class JsInliner extends JsVisitorWithContextImpl {
             inlineCallInfos.add(new JsCallInfo(call, containingFunction));
         }
 
-        JsFunction definition = getFunctionContext().getFunctionDefinition(call);
+        JsFunction definition = getFunctionContext().getFunctionDefinition(call).getFunction();
 
         if (inProcessFunctions.contains(definition))  {
             reportInlineCycle(call, definition);
@@ -345,13 +350,13 @@ public class JsInliner extends JsVisitorWithContextImpl {
             functionContext = new FunctionContext(functionReader, config) {
                 @Nullable
                 @Override
-                protected JsFunction lookUpStaticFunction(@Nullable JsName functionName) {
+                protected NamedFunction lookUpStaticFunction(@Nullable JsName functionName) {
                     return functions.get(functionName);
                 }
 
                 @Nullable
                 @Override
-                protected JsFunction lookUpStaticFunctionByTag(@NotNull String functionTag) {
+                protected NamedFunction lookUpStaticFunctionByTag(@NotNull String functionTag) {
                     return accessors.get(functionTag);
                 }
             };

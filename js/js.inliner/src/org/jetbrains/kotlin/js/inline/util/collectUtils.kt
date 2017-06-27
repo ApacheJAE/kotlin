@@ -118,9 +118,9 @@ fun JsFunction.collectFreeVariables() = collectUsedNames(body) - collectDefinedN
 
 fun JsFunction.collectLocalVariables() = collectDefinedNames(body) + parameters.map { it.name }
 
-fun collectNamedFunctions(scope: JsNode) = collectNamedFunctionsAndMetadata(scope).mapValues { it.value.first }
+fun collectNamedFunctions(scope: JsNode) = collectNamedFunctionsAndMetadata(scope).mapValues { it.value.function }
 
-fun collectNamedFunctionsOrMetadata(scope: JsNode) = collectNamedFunctionsAndMetadata(scope).mapValues { it.value.second }
+fun collectNamedFunctionsOrMetadata(scope: JsNode) = collectNamedFunctionsAndMetadata(scope).mapValues { it.value.metadata }
 
 fun collectNamedFunctions(fragments: List<JsProgramFragment>): Map<JsName, JsFunction> {
     val result = mutableMapOf<JsName, JsFunction>()
@@ -131,8 +131,17 @@ fun collectNamedFunctions(fragments: List<JsProgramFragment>): Map<JsName, JsFun
     return result
 }
 
-fun collectNamedFunctionsAndMetadata(scope: JsNode): Map<JsName, Pair<JsFunction, JsExpression>> {
-    val namedFunctions = mutableMapOf<JsName, Pair<JsFunction, JsExpression>>()
+fun collectNamedFunctionsAndMetadata(fragments: List<JsProgramFragment>): Map<JsName, NamedFunction> {
+    val result = mutableMapOf<JsName, NamedFunction>()
+    for (fragment in fragments) {
+        result += collectNamedFunctionsAndMetadata(fragment.declarationBlock)
+        result += collectNamedFunctionsAndMetadata(fragment.initializerBlock)
+    }
+    return result
+}
+
+fun collectNamedFunctionsAndMetadata(scope: JsNode): Map<JsName, NamedFunction> {
+    val namedFunctions = mutableMapOf<JsName, NamedFunction>()
 
     scope.accept(object : RecursiveJsVisitor() {
         override fun visitBinaryExpression(x: JsBinaryOperation) {
@@ -141,9 +150,10 @@ fun collectNamedFunctionsAndMetadata(scope: JsNode): Map<JsName, Pair<JsFunction
                 val (left, right) = assignment
                 if (left is JsNameRef) {
                     val name = left.name
-                    val function = extractFunction(right)
-                    if (function != null && name != null) {
-                        namedFunctions[name] = Pair(function, right)
+                    if (name != null) {
+                        extractFunction(right)?.let { (function, wrapper) ->
+                            namedFunctions[name] = NamedFunction(function, wrapper, right)
+                        }
                     }
                 }
             }
@@ -154,9 +164,8 @@ fun collectNamedFunctionsAndMetadata(scope: JsNode): Map<JsName, Pair<JsFunction
             val initializer = x.initExpression
             val name = x.name
             if (initializer != null && name != null) {
-                val function = extractFunction(initializer)
-                if (function != null) {
-                    namedFunctions[name] = Pair(function, initializer)
+                extractFunction(initializer)?.let { (function, wrapper) ->
+                    namedFunctions[name] = NamedFunction(function, wrapper, initializer)
                 }
             }
             super.visit(x)
@@ -165,19 +174,30 @@ fun collectNamedFunctionsAndMetadata(scope: JsNode): Map<JsName, Pair<JsFunction
         override fun visitFunction(x: JsFunction) {
             val name = x.name
             if (name != null) {
-                namedFunctions[name] = Pair(x, x)
+                namedFunctions[name] = NamedFunction(x, null, x)
             }
             super.visitFunction(x)
         }
 
         private fun extractFunction(expression: JsExpression) = when (expression) {
-            is JsFunction -> expression
-            else -> InlineMetadata.decompose(expression)?.function
+            is JsFunction -> Pair(expression, null)
+            else -> {
+                val inlineMetadata = InlineMetadata.decompose(expression)
+                if (inlineMetadata != null) {
+                    val callExpression = ((inlineMetadata.callExpression as? JsInvocation)?.qualifier as? JsFunction)?.body
+                    Pair(inlineMetadata.function, callExpression)
+                }
+                else {
+                    null
+                }
+            }
         }
     })
 
     return namedFunctions
 }
+
+data class NamedFunction(val function: JsFunction, val wrapperBody: JsBlock?, val metadata: JsExpression)
 
 fun collectAccessors(scope: JsNode): Map<String, JsFunction> {
     val accessors = hashMapOf<String, JsFunction>()
